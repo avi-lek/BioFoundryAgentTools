@@ -1,0 +1,4 @@
+pytorch
+pyyaml
+requests
+boltz[cuda]

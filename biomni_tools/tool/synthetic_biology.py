@@ -17,38 +17,40 @@ def engineer_bacterial_genome_for_therapeutic_delivery(bacterial_genome_file, ge
 
     Returns
     -------
-    str
-        Research log summarizing the engineering process, including the filename of the
-        engineered genome and plasmid map
+    dict
+        Dictionary containing engineered genome sequence, features, and summary details.
+        No files are written.
 
     """
     import datetime
+    import io
 
     from Bio import SeqIO
-    from Bio.Graphics import GenomeDiagram
     from Bio.Seq import Seq
     from Bio.SeqFeature import FeatureLocation, SeqFeature
     from Bio.SeqRecord import SeqRecord
-    from reportlab.lib import colors
 
-    # Initialize research log
-    log = ["# Bacterial Genome Engineering for Therapeutic Delivery\n"]
-    log.append(f"Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    report = {
+        "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "inputs": {
+            "bacterial_genome_file": bacterial_genome_file,
+            "genetic_parts": genetic_parts,
+        },
+        "genome": {},
+        "features": [],
+        "summary": {},
+        "suggested_files": {},
+    }
 
     # Step 1: Load the bacterial genome
-    log.append("## Step 1: Loading Bacterial Genome")
     try:
         genome_record = SeqIO.read(bacterial_genome_file, "fasta")
         genome_seq = genome_record.seq
-        log.append(f"Successfully loaded genome: {genome_record.id}")
-        log.append(f"Genome length: {len(genome_seq)} bp\n")
     except Exception as e:
-        log.append(f"Error loading genome: {str(e)}")
-        return "\n".join(log)
+        report["error"] = f"Error loading genome: {str(e)}"
+        return report
 
     # Step 2: Design and integrate genetic parts
-    log.append("## Step 2: Integrating Genetic Parts")
-
     # Create a new genome sequence for modifications
     # In newer BioPython versions, Seq objects are mutable by default
     # or we can convert to a string and modify it, then convert back to Seq
@@ -62,7 +64,6 @@ def engineer_bacterial_genome_for_therapeutic_delivery(bacterial_genome_file, ge
 
     # Add promoters
     if "promoters" in genetic_parts:
-        log.append("### Adding Promoters:")
         for promoter in genetic_parts["promoters"]:
             position = promoter["position"] + position_adjustment
 
@@ -84,12 +85,17 @@ def engineer_bacterial_genome_for_therapeutic_delivery(bacterial_genome_file, ge
                 qualifiers={"label": promoter["name"]},
             )
             features.append(feature)
-
-            log.append(f"  - Added promoter {promoter['name']} at position {position}")
+            report["features"].append(
+                {
+                    "type": "promoter",
+                    "name": promoter["name"],
+                    "start": int(position),
+                    "end": int(position + len(promoter["sequence"])),
+                }
+            )
 
     # Add genes
     if "genes" in genetic_parts:
-        log.append("### Adding Genes:")
         for gene in genetic_parts["genes"]:
             position = gene["position"] + position_adjustment
 
@@ -111,12 +117,17 @@ def engineer_bacterial_genome_for_therapeutic_delivery(bacterial_genome_file, ge
                 qualifiers={"label": gene["name"]},
             )
             features.append(feature)
-
-            log.append(f"  - Added gene {gene['name']} at position {position}")
+            report["features"].append(
+                {
+                    "type": "gene",
+                    "name": gene["name"],
+                    "start": int(position),
+                    "end": int(position + len(gene["sequence"])),
+                }
+            )
 
     # Add terminators
     if "terminators" in genetic_parts:
-        log.append("### Adding Terminators:")
         for terminator in genetic_parts["terminators"]:
             position = terminator["position"] + position_adjustment
 
@@ -131,8 +142,14 @@ def engineer_bacterial_genome_for_therapeutic_delivery(bacterial_genome_file, ge
                 qualifiers={"label": terminator["name"]},
             )
             features.append(feature)
-
-            log.append(f"  - Added terminator {terminator['name']} at position {position}")
+            report["features"].append(
+                {
+                    "type": "terminator",
+                    "name": terminator["name"],
+                    "start": int(position),
+                    "end": int(position + len(terminator["sequence"])),
+                }
+            )
 
     # Add therapeutic cargo
     if "cargo" in genetic_parts:
@@ -150,13 +167,16 @@ def engineer_bacterial_genome_for_therapeutic_delivery(bacterial_genome_file, ge
             qualifiers={"label": cargo["name"]},
         )
         features.append(feature)
-
-        log.append("### Added Therapeutic Cargo:")
-        log.append(f"  - Added {cargo['name']} at position {position}")
-        log.append(f"  - Cargo length: {len(cargo['sequence'])} bp\n")
+        report["features"].append(
+            {
+                "type": "therapeutic_cargo",
+                "name": cargo["name"],
+                "start": int(position),
+                "end": int(position + len(cargo["sequence"])),
+            }
+        )
 
     # Step 3: Create the engineered genome record
-    log.append("## Step 3: Finalizing Engineered Genome")
     engineered_genome = SeqRecord(
         seq=Seq(engineered_seq),
         id=f"{genome_record.id}_engineered",
@@ -167,59 +187,29 @@ def engineer_bacterial_genome_for_therapeutic_delivery(bacterial_genome_file, ge
     # Add all features to the engineered genome
     engineered_genome.features = features
 
-    # Save the engineered genome to a file
-    output_genome_file = f"{genome_record.id}_engineered.fasta"
-    SeqIO.write(engineered_genome, output_genome_file, "fasta")
-    log.append(f"Engineered genome saved to: {output_genome_file}")
-    log.append(f"Total genome length: {len(engineered_genome.seq)} bp\n")
+    fasta_buf = io.StringIO()
+    SeqIO.write(engineered_genome, fasta_buf, "fasta")
 
-    # Step 4: Generate a plasmid map
-    log.append("## Step 4: Generating Plasmid Map")
+    report["genome"] = {
+        "id": genome_record.id,
+        "length_bp": len(genome_seq),
+        "engineered_id": engineered_genome.id,
+        "engineered_length_bp": len(engineered_genome.seq),
+        "engineered_sequence": engineered_seq,
+        "engineered_fasta": fasta_buf.getvalue(),
+    }
+    report["summary"] = {
+        "promoters_added": len(genetic_parts.get("promoters", [])),
+        "genes_added": len(genetic_parts.get("genes", [])),
+        "terminators_added": len(genetic_parts.get("terminators", [])),
+        "cargo_name": genetic_parts.get("cargo", {}).get("name") if "cargo" in genetic_parts else None,
+    }
+    report["suggested_files"] = {
+        "engineered_genome_fasta": f"{genome_record.id}_engineered.fasta",
+        "plasmid_map_pdf": f"{genome_record.id}_engineered_map.pdf",
+    }
 
-    # Create the diagram
-    gd_diagram = GenomeDiagram.Diagram("Engineered Bacterial Genome")
-    gd_track = gd_diagram.new_track(1, name="Engineered Features")
-    gd_feature_set = gd_track.new_set()
-
-    # Add features with different colors
-    for feature in features:
-        if feature.type == "promoter":
-            color = colors.green
-        elif feature.type == "gene":
-            color = colors.blue
-        elif feature.type == "terminator":
-            color = colors.red
-        elif feature.type == "therapeutic_cargo":
-            color = colors.purple
-        else:
-            color = colors.grey
-
-        gd_feature_set.add_feature(feature, color=color, label=True)
-
-    # Draw and save the plasmid map
-    plasmid_map_file = f"{genome_record.id}_engineered_map.pdf"
-    gd_diagram.draw(format="circular", circular=True, pagesize=(1000, 1000))
-    gd_diagram.write(plasmid_map_file, "PDF")
-
-    log.append(f"Plasmid map generated and saved to: {plasmid_map_file}\n")
-
-    # Step 5: Final summary
-    log.append("## Summary of Engineered Bacterial Strain")
-    log.append(f"- Base strain: {genome_record.id}")
-    log.append("- Added genetic parts:")
-
-    if "promoters" in genetic_parts:
-        log.append(f"  - Promoters: {len(genetic_parts['promoters'])}")
-    if "genes" in genetic_parts:
-        log.append(f"  - Genes: {len(genetic_parts['genes'])}")
-    if "terminators" in genetic_parts:
-        log.append(f"  - Terminators: {len(genetic_parts['terminators'])}")
-    if "cargo" in genetic_parts:
-        log.append(f"  - Therapeutic cargo: {genetic_parts['cargo']['name']}")
-
-    log.append("\nThe engineered bacterial strain is ready for transformation and selection.")
-
-    return "\n".join(log)
+    return report
 
 
 def analyze_bacterial_growth_rate(time_points, od_measurements, strain_name="Unknown strain", output_dir="./"):
@@ -238,22 +228,15 @@ def analyze_bacterial_growth_rate(time_points, od_measurements, strain_name="Unk
 
     Returns
     -------
-    str
-        A research log summarizing the analysis steps, fitted parameters, and results
+    dict
+        Dictionary containing fitted parameters, model predictions, and summary statistics.
+        No files are written; output_dir is accepted for backward compatibility.
 
     """
-    import os
     from datetime import datetime
 
-    import matplotlib
-
-    matplotlib.use("Agg")  # Use non-interactive backend
-    import matplotlib.pyplot as plt
     import numpy as np
     from scipy.optimize import curve_fit
-
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
 
     # Convert inputs to numpy arrays if they aren't already
     time_points = np.array(time_points)
@@ -294,63 +277,49 @@ def analyze_bacterial_growth_rate(time_points, od_measurements, strain_name="Unk
         # Calculate doubling time (ln(2)/μ)
         doubling_time = np.log(2) / mu_max
 
-        # Generate fitted curve for plotting
+        # Generate fitted curve for plotting/data return
         t_smooth = np.linspace(min(time_points), max(time_points), 100)
         od_fit = gompertz_model(t_smooth, *popt)
-
-        # Create growth curve plot
-        plt.figure(figsize=(10, 6))
-        plt.scatter(time_points, od_measurements, label="Observed OD600")
-        plt.plot(t_smooth, od_fit, "r-", label="Fitted Gompertz model")
-        plt.xlabel("Time (hours)")
-        plt.ylabel("Optical Density (OD600)")
-        plt.title(f"Bacterial Growth Curve: {strain_name}")
-        plt.legend()
-        plt.grid(True, linestyle="--", alpha=0.7)
-
-        # Save the plot
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        plot_filename = os.path.join(output_dir, f"{strain_name.replace(' ', '_')}_{timestamp}_growth_curve.png")
-        plt.savefig(plot_filename)
-        plt.close()
-
-        # Create research log
-        log = f"""## Bacterial Growth Rate Analysis: {strain_name}
-
-### Analysis Summary
-- **Date and Time:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-- **Sample:** {strain_name}
-- **Data Points:** {len(time_points)} measurements over {max(time_points) - min(time_points):.2f} hours
-
-### Growth Parameters (Gompertz Model)
-- **Lag Phase Duration:** {lag_time:.2f} hours
-- **Maximum Growth Rate (μ_max):** {mu_max:.4f} per hour
-- **Doubling Time:** {doubling_time:.2f} hours
-- **Carrying Capacity (max OD):** {carrying_capacity:.4f} OD600 units
-
-### Methods
-1. OD600 measurements were taken at various time points
-2. Data was fitted to the Gompertz growth model
-3. Growth parameters were extracted from the fitted model
-4. Growth curve was plotted and saved as: {plot_filename}
-
-### Note
-The Gompertz model provides a good representation of bacterial growth phases including lag, exponential, and stationary phases.
-"""
-
-        return log
+        return {
+            "inputs": {
+                "strain_name": strain_name,
+                "time_points": time_points.tolist(),
+                "od_measurements": od_measurements.tolist(),
+                "output_dir": output_dir,
+            },
+            "summary": {
+                "analysis_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "num_points": len(time_points),
+                "duration_hours": float(max(time_points) - min(time_points)),
+            },
+            "fit": {
+                "lag_time_hours": float(lag_time),
+                "mu_max_per_hour": float(mu_max),
+                "doubling_time_hours": float(doubling_time),
+                "carrying_capacity_od": float(carrying_capacity),
+                "covariance": pcov.tolist(),
+            },
+            "model_curve": {
+                "time_points": t_smooth.tolist(),
+                "od_fit": od_fit.tolist(),
+            },
+        }
 
     except RuntimeError as e:
-        return f"""## Bacterial Growth Rate Analysis: {strain_name}
-
-### Error in Analysis
-Failed to fit the growth model to the provided data: {str(e)}
-
-### Suggestions
-- Check if the data shows a typical growth pattern
-- Ensure sufficient data points are provided
-- Try different initial parameter guesses or a different growth model
-"""
+        return {
+            "inputs": {
+                "strain_name": strain_name,
+                "time_points": time_points.tolist(),
+                "od_measurements": od_measurements.tolist(),
+                "output_dir": output_dir,
+            },
+            "error": f"Failed to fit the growth model to the provided data: {str(e)}",
+            "suggestions": [
+                "Check if the data shows a typical growth pattern",
+                "Ensure sufficient data points are provided",
+                "Try different initial parameter guesses or a different growth model",
+            ],
+        }
 
 
 def analyze_barcode_sequencing_data(
@@ -380,11 +349,11 @@ def analyze_barcode_sequencing_data(
 
     Returns
     -------
-    str
-        Research log summarizing the analysis steps and results
+    dict
+        Dictionary containing barcode counts, filtered barcodes, and lineage analysis results.
+        No files are written; output_dir is accepted for backward compatibility.
 
     """
-    import os
     import re
     from collections import Counter
 
@@ -393,16 +362,26 @@ def analyze_barcode_sequencing_data(
     from scipy.cluster.hierarchy import fcluster, linkage
     from scipy.spatial.distance import pdist
 
-    # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Initialize research log
-    log = "# Barcode Sequencing Analysis Research Log\n\n"
-    log += f"## Input Data\n- File: {input_file}\n\n"
+    result = {
+        "inputs": {
+            "input_file": input_file,
+            "barcode_pattern": barcode_pattern,
+            "flanking_seq_5prime": flanking_seq_5prime,
+            "flanking_seq_3prime": flanking_seq_3prime,
+            "min_count": min_count,
+            "output_dir": output_dir,
+        },
+        "summary": {},
+        "counts": {},
+        "filtered_counts": {},
+        "lineages": {},
+        "suggested_files": {
+            "barcode_counts_tsv": "barcode_counts.tsv",
+            "barcode_lineages_tsv": "barcode_lineages.tsv",
+        },
+    }
 
     # Step 1: Read sequences and extract barcodes
-    log += "## Step 1: Extracting barcodes from sequencing data\n"
-
     # Determine file format based on extension
     file_format = "fastq" if input_file.endswith((".fastq", ".fq")) else "fasta"
 
@@ -424,39 +403,29 @@ def analyze_barcode_sequencing_data(
             if match:
                 barcodes.append(match.group(1))
 
-    log += f"- Total reads processed: {total_reads}\n"
-    log += f"- Barcodes extracted: {len(barcodes)}\n\n"
-
     if len(barcodes) == 0:
-        log += "ERROR: No barcodes found. Check your barcode pattern or flanking sequences.\n"
-        return log
+        result["error"] = "No barcodes found. Check your barcode pattern or flanking sequences."
+        result["summary"] = {
+            "total_reads": total_reads,
+            "barcodes_extracted": 0,
+        }
+        return result
 
     # Step 2: Quantify barcode abundances
-    log += "## Step 2: Quantifying barcode abundances\n"
     barcode_counts = Counter(barcodes)
 
     # Filter low-abundance barcodes
     filtered_barcodes = {bc: count for bc, count in barcode_counts.items() if count >= min_count}
 
-    log += f"- Unique barcodes: {len(barcode_counts)}\n"
-    log += f"- Barcodes with count ≥ {min_count}: {len(filtered_barcodes)}\n"
-
-    # Save barcode counts to file
-    count_file = os.path.join(output_dir, "barcode_counts.tsv")
-    with open(count_file, "w") as f:
-        f.write("Barcode\tCount\tFrequency\n")
-        for bc, count in sorted(filtered_barcodes.items(), key=lambda x: x[1], reverse=True):
-            freq = count / total_reads
-            f.write(f"{bc}\t{count}\t{freq:.6f}\n")
-
-    log += f"- Barcode abundances saved to: {count_file}\n\n"
-
-    # Step 3: Analyze barcode relationships (lineage analysis)
-    log += "## Step 3: Analyzing barcode relationships and lineages\n"
+    result["counts"] = dict(barcode_counts)
+    result["filtered_counts"] = dict(filtered_barcodes)
 
     # Only proceed if we have enough barcodes
     if len(filtered_barcodes) < 2:
-        log += "- Not enough barcodes for lineage analysis after filtering\n\n"
+        result["lineages"] = {
+            "status": "insufficient_barcodes",
+            "message": "Not enough barcodes for lineage analysis after filtering",
+        }
     else:
         # Convert barcodes to numerical representation for distance calculation
         barcode_list = list(filtered_barcodes.keys())
@@ -489,27 +458,31 @@ def analyze_barcode_sequencing_data(
             # Count clusters
             cluster_counts = Counter(clusters)
 
-            log += f"- Identified {len(cluster_counts)} potential lineages\n"
-            log += f"- Largest lineage contains {max(cluster_counts.values())} barcodes\n"
-
-            # Save lineage information
-            lineage_file = os.path.join(output_dir, "barcode_lineages.tsv")
-            with open(lineage_file, "w") as f:
-                f.write("Barcode\tCount\tLineage\n")
-                for i, bc in enumerate(barcode_list):
-                    f.write(f"{bc}\t{filtered_barcodes[bc]}\t{clusters[i]}\n")
-
-            log += f"- Lineage assignments saved to: {lineage_file}\n\n"
+            result["lineages"] = {
+                "status": "ok",
+                "max_hamming_distance": max_dist,
+                "lineage_count": len(cluster_counts),
+                "largest_lineage_size": max(cluster_counts.values()),
+                "assignments": [
+                    {"barcode": bc, "count": filtered_barcodes[bc], "lineage": int(clusters[i])}
+                    for i, bc in enumerate(barcode_list)
+                ],
+            }
         except Exception as e:
-            log += f"- Error in lineage analysis: {str(e)}\n\n"
+            result["lineages"] = {
+                "status": "error",
+                "message": f"Error in lineage analysis: {str(e)}",
+            }
 
-    # Step 4: Summary
-    log += "## Summary\n"
-    log += f"- Processed {total_reads} sequencing reads\n"
-    log += f"- Identified {len(barcode_counts)} unique barcodes\n"
-    log += f"- {len(filtered_barcodes)} barcodes passed abundance threshold (≥ {min_count})\n"
+    result["summary"] = {
+        "total_reads": total_reads,
+        "barcodes_extracted": len(barcodes),
+        "unique_barcodes": len(barcode_counts),
+        "barcodes_passing_threshold": len(filtered_barcodes),
+        "min_count": min_count,
+    }
 
-    return log
+    return result
 
 
 def analyze_bifurcation_diagram(time_series_data, parameter_values, system_name="Dynamical System", output_dir="./"):
@@ -530,38 +503,24 @@ def analyze_bifurcation_diagram(time_series_data, parameter_values, system_name=
 
     Returns
     -------
-    str
-        Research log summarizing the bifurcation analysis process and results.
+    dict
+        Dictionary containing regime classification, indicators, and attractor points.
+        No files are written; output_dir is accepted for backward compatibility.
 
     """
-    import os
-
-    import matplotlib
-
-    matplotlib.use("Agg")  # Use non-interactive backend
-    import matplotlib.pyplot as plt
     import numpy as np
     from scipy.signal import find_peaks
 
-    # Create output directory if it doesn't exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    # Initialize research log
-    research_log = f"# Bifurcation Analysis for {system_name}\n\n"
-    research_log += "## Analysis Steps\n\n"
-
     # Step 1: Verify input data
-    research_log += "### Step 1: Data Verification\n"
     if len(parameter_values) != time_series_data.shape[0]:
-        research_log += "Error: Number of parameter values does not match number of time series.\n"
-        return research_log
-
-    research_log += f"- Analyzed {len(parameter_values)} parameter values\n"
-    research_log += f"- Each time series contains {time_series_data.shape[1]} data points\n\n"
-
-    # Step 2: Calculate indicators for different dynamical regimes
-    research_log += "### Step 2: Calculating Dynamical Indicators\n"
+        return {
+            "error": "Number of parameter values does not match number of time series.",
+            "inputs": {
+                "system_name": system_name,
+                "parameter_values": list(parameter_values),
+                "output_dir": output_dir,
+            },
+        }
 
     # Initialize arrays to store results
     local_maxima_counts = np.zeros(len(parameter_values))
@@ -593,12 +552,7 @@ def analyze_bifurcation_diagram(time_series_data, parameter_values, system_name=
             # If no peaks, use the last few points
             attractor_points.append((parameter_values[i], steady_state[-5:]))
 
-    research_log += "- Calculated approximate Lyapunov exponents\n"
-    research_log += "- Identified local maxima for periodicity analysis\n"
-    research_log += "- Sampled attractor points for bifurcation diagram\n\n"
-
     # Step 3: Classify dynamical regimes
-    research_log += "### Step 3: Classifying Dynamical Regimes\n"
 
     # Initialize arrays for regime classification
     regimes = np.full(len(parameter_values), "unknown", dtype=object)
@@ -621,86 +575,49 @@ def analyze_bifurcation_diagram(time_series_data, parameter_values, system_name=
             else:
                 regimes[i] = f"period-{int(local_maxima_counts[i])}"
 
-    # Count regime types
-    unique_regimes = np.unique(regimes)
-    for regime in unique_regimes:
-        count = np.sum(regimes == regime)
-        research_log += f"- Identified {count} parameter values in '{regime}' regime\n"
-
-    research_log += "\n"
-
-    # Step 4: Create bifurcation diagram
-    research_log += "### Step 4: Creating Bifurcation Diagram\n"
-
-    plt.figure(figsize=(12, 8))
-
-    # Plot bifurcation points
-    for param_val, points in attractor_points:
-        y_values = points.flatten()  # Flatten in case points is multi-dimensional
-        plt.plot([param_val] * len(y_values), y_values, "k.", markersize=0.5)
-
-    # Highlight different regimes with colored background
+    # Identify regime changes
     regime_changes = np.where(regimes[:-1] != regimes[1:])[0]
-    regime_boundaries = (
-        [parameter_values[0]] + [parameter_values[i + 1] for i in regime_changes] + [parameter_values[-1]]
-    )
-
-    colors = {
-        "stable": "lightblue",
-        "period-1": "lightgreen",
-        "period-2": "lightyellow",
-        "period-4": "lightpink",
-        "chaotic": "salmon",
-    }
-
-    for i in range(len(regime_boundaries) - 1):
-        start_idx = list(parameter_values).index(regime_boundaries[i])
-        regime = regimes[start_idx]
-        if regime in colors:
-            plt.axvspan(
-                regime_boundaries[i],
-                regime_boundaries[i + 1],
-                alpha=0.3,
-                color=colors.get(regime, "lightgray"),
-            )
-
-    plt.xlabel("Parameter Value")
-    plt.ylabel("State Variable")
-    plt.title(f"Bifurcation Diagram for {system_name}")
-
-    # Add legend for regimes
-    from matplotlib.patches import Patch
-
-    legend_elements = [
-        Patch(facecolor=colors.get(regime, "lightgray"), alpha=0.3, label=regime)
-        for regime in unique_regimes
-        if regime in colors
+    regime_transitions = [
+        {
+            "from": regimes[i],
+            "to": regimes[i + 1],
+            "parameter_value": float(parameter_values[i + 1]),
+        }
+        for i in regime_changes
     ]
-    plt.legend(handles=legend_elements, loc="upper right")
 
-    # Save the figure
-    output_file = os.path.join(output_dir, f"{system_name.replace(' ', '_')}_bifurcation_diagram.png")
-    plt.savefig(output_file, dpi=300)
-    plt.close()
+    unique_regimes = np.unique(regimes)
+    regime_counts = {regime: int(np.sum(regimes == regime)) for regime in unique_regimes}
 
-    research_log += "- Created bifurcation diagram showing different dynamical regimes\n"
-    research_log += f"- Diagram saved as: {output_file}\n\n"
-
-    # Step 5: Identify regime transitions
-    research_log += "### Step 5: Identifying Regime Transitions\n"
-
-    if len(regime_changes) > 0:
-        for i in regime_changes:
-            research_log += f"- Transition from '{regimes[i]}' to '{regimes[i + 1]}' at parameter value ≈ {parameter_values[i + 1]:.4f}\n"
-    else:
-        research_log += "- No regime transitions detected in the parameter range\n"
-
-    research_log += "\n### Summary\n"
-    research_log += f"Bifurcation analysis completed for {system_name}. "
-    research_log += f"The system exhibits {len(unique_regimes)} different dynamical regimes "
-    research_log += f"across the parameter range [{parameter_values[0]:.4f}, {parameter_values[-1]:.4f}].\n"
-
-    return research_log
+    return {
+        "inputs": {
+            "system_name": system_name,
+            "parameter_values": list(parameter_values),
+            "output_dir": output_dir,
+        },
+        "summary": {
+            "num_parameter_values": len(parameter_values),
+            "time_points_per_series": int(time_series_data.shape[1]),
+            "regime_counts": regime_counts,
+            "parameter_range": (float(parameter_values[0]), float(parameter_values[-1])),
+        },
+        "indicators": {
+            "local_maxima_counts": local_maxima_counts.tolist(),
+            "lyapunov_estimates": lyapunov_estimates.tolist(),
+        },
+        "attractor_points": [
+            {
+                "parameter_value": float(param_val),
+                "points": points.flatten().tolist(),
+            }
+            for param_val, points in attractor_points
+        ],
+        "regimes": regimes.tolist(),
+        "regime_transitions": regime_transitions,
+        "suggested_files": {
+            "bifurcation_diagram_png": f"{system_name.replace(' ', '_')}_bifurcation_diagram.png",
+        },
+    }
 
 
 def create_biochemical_network_sbml_model(reaction_network, kinetic_parameters, output_file="biochemical_model.xml"):
@@ -727,37 +644,28 @@ def create_biochemical_network_sbml_model(reaction_network, kinetic_parameters, 
 
     Returns
     -------
-    str
-        Research log summarizing the model creation process
+    dict
+        Dictionary containing SBML string, model summary, and validation results.
+        No files are written; output_file is accepted for backward compatibility.
 
     """
-    import os
-
     import libsbml
 
-    log = "# Biochemical Network SBML Model Creation Log\n\n"
-
     # Step 1: Create an SBML document
-    log += "## Step 1: Creating SBML document\n"
     sbml_ns = libsbml.SBMLNamespaces(3, 2)  # SBML Level 3 Version 2
     document = libsbml.SBMLDocument(sbml_ns)
     model = document.createModel()
     model.setId("biochemical_network_model")
     model.setName("Biochemical Network Model")
-    log += "- Created SBML Level 3 Version 2 document\n"
-    log += "- Created model with ID 'biochemical_network_model'\n\n"
 
     # Step 2: Create default compartment
-    log += "## Step 2: Creating default compartment\n"
     compartment = model.createCompartment()
     compartment.setId("default")
     compartment.setConstant(True)
     compartment.setSize(1.0)
     compartment.setSpatialDimensions(3)
-    log += "- Created default compartment\n\n"
 
     # Step 3: Create species
-    log += "## Step 3: Creating species\n"
     species_set = set()
 
     # Collect all unique species from reactions
@@ -774,11 +682,8 @@ def create_biochemical_network_sbml_model(reaction_network, kinetic_parameters, 
         species.setHasOnlySubstanceUnits(False)
         species.setBoundaryCondition(False)
         species.setConstant(False)
-        log += f"- Created species '{species_id}'\n"
-    log += "\n"
 
     # Step 4: Create reactions
-    log += "## Step 4: Creating reactions and kinetic laws\n"
     for reaction_data in reaction_network:
         reaction = model.createReaction()
         reaction.setId(reaction_data["id"])
@@ -826,35 +731,28 @@ def create_biochemical_network_sbml_model(reaction_network, kinetic_parameters, 
             elif "formula" in kinetic_data:
                 kinetic_law.setMath(libsbml.parseL3Formula(kinetic_data["formula"]))
 
-        log += f"- Created reaction '{reaction_data['id']}' ({reaction_data['name']})\n"
-        if reaction_data["id"] in kinetic_parameters:
-            log += f"  - Added kinetic law of type '{kinetic_parameters[reaction_data['id']]['law_type']}'\n"
-    log += "\n"
 
     # Step 5: Validate the model
-    log += "## Step 5: Validating the SBML model\n"
     document.setConsistencyChecks(libsbml.LIBSBML_CAT_UNITS_CONSISTENCY, False)
     consistent = document.checkConsistency()
-    if consistent == 0:
-        log += "- Model passed consistency check\n"
-    else:
-        log += "- Model has consistency issues:\n"
+    errors = []
+    if consistent != 0:
         for i in range(document.getNumErrors()):
             error = document.getError(i)
-            log += f"  - {error.getMessage()}\n"
-    log += "\n"
+            errors.append(error.getMessage())
 
-    # Step 6: Write model to file
-    log += "## Step 6: Saving the SBML model\n"
-    libsbml.writeSBMLToFile(document, output_file)
-    log += f"- Model saved to '{os.path.abspath(output_file)}'\n\n"
+    sbml_string = libsbml.writeSBMLToString(document)
 
-    # Step 7: Summary
-    log += "## Summary\n"
-    log += f"- Created SBML model with {len(species_set)} species and {len(reaction_network)} reactions\n"
-    log += f"- Model saved as '{output_file}'\n"
-
-    return log
+    return {
+        "summary": {
+            "species_count": len(species_set),
+            "reaction_count": len(reaction_network),
+            "consistent": consistent == 0,
+        },
+        "validation_errors": errors,
+        "sbml": sbml_string,
+        "output_file": output_file,
+    }
 
 
 def optimize_codons_for_heterologous_expression(target_sequence, host_codon_usage):
@@ -872,32 +770,25 @@ def optimize_codons_for_heterologous_expression(target_sequence, host_codon_usag
 
     Returns
     -------
-    str
-        A research log summarizing the optimization process and results.
+    dict
+        Dictionary containing optimized sequence, codon statistics, and warnings.
 
     """
     from Bio.Data import CodonTable
 
-    # Initialize research log
-    log = "# Codon Optimization Analysis Research Log\n\n"
-
     # Check if sequence is DNA or RNA and standardize to DNA
     is_rna = "U" in target_sequence
     working_seq = target_sequence.replace("U", "T") if is_rna else target_sequence
-
-    log += "## Input Sequence Analysis\n"
-    log += f"- Sequence type: {'RNA' if is_rna else 'DNA'}\n"
-    log += f"- Sequence length: {len(working_seq)} nucleotides\n"
+    warnings = []
 
     # Verify sequence length is divisible by 3
     if len(working_seq) % 3 != 0:
-        log += (
-            f"- WARNING: Sequence length ({len(working_seq)}) is not divisible by 3. Optimization may be incomplete.\n"
+        warnings.append(
+            f"Sequence length ({len(working_seq)}) is not divisible by 3. Optimization may be incomplete."
         )
 
     # Extract codons from the sequence
     original_codons = [working_seq[i : i + 3] for i in range(0, len(working_seq), 3)]
-    log += f"- Number of codons: {len(original_codons)}\n\n"
 
     # Get standard genetic code
     standard_table = CodonTable.standard_dna_table
@@ -935,7 +826,7 @@ def optimize_codons_for_heterologous_expression(target_sequence, host_codon_usag
         except KeyError:
             # If codon not in standard table, keep original
             optimized_codons.append(codon)
-            log += f"- WARNING: Non-standard codon detected: {codon}. Keeping original.\n"
+            warnings.append(f"Non-standard codon detected: {codon}. Keeping original.")
 
     # Combine optimized codons into sequence
     optimized_sequence = "".join(optimized_codons)
@@ -948,26 +839,24 @@ def optimize_codons_for_heterologous_expression(target_sequence, host_codon_usag
     codon_changes = sum(1 for i, j in zip(original_codons, optimized_codons, strict=False) if i != j)
     percent_changed = (codon_changes / len(original_codons)) * 100 if original_codons else 0
 
-    log += "## Optimization Results\n"
-    log += f"- Codons modified: {codon_changes} out of {len(original_codons)} ({percent_changed:.2f}%)\n"
-
-    # Save sequences to files
-    with open("original_sequence.txt", "w") as f:
-        f.write(target_sequence)
-
-    with open("optimized_sequence.txt", "w") as f:
-        f.write(optimized_sequence)
-
-    log += "- Original sequence saved to: original_sequence.txt\n"
-    log += "- Optimized sequence saved to: optimized_sequence.txt\n\n"
-
-    # Add summary
-    log += "## Summary\n"
-    log += "The target gene sequence has been optimized for expression in the provided host organism. "
-    log += f"The optimization process replaced {codon_changes} codons ({percent_changed:.2f}%) "
-    log += "with synonymous codons that have higher usage frequency in the host.\n"
-
-    return log
+    return {
+        "inputs": {
+            "sequence_type": "RNA" if is_rna else "DNA",
+            "sequence_length": len(working_seq),
+        },
+        "original_sequence": target_sequence,
+        "optimized_sequence": optimized_sequence,
+        "stats": {
+            "num_codons": len(original_codons),
+            "codons_modified": codon_changes,
+            "percent_modified": percent_changed,
+        },
+        "warnings": warnings,
+        "suggested_files": {
+            "original_sequence_txt": "original_sequence.txt",
+            "optimized_sequence_txt": "optimized_sequence.txt",
+        },
+    }
 
 
 def simulate_gene_circuit_with_growth_feedback(
@@ -1007,13 +896,12 @@ def simulate_gene_circuit_with_growth_feedback(
 
     Returns
     -------
-    str
-        Research log summarizing the simulation and results with file names of saved data
+    dict
+        Dictionary containing simulation parameters, time series results, and summary metrics.
+        No files are written.
 
     """
     import datetime
-    import json
-    import os
 
     import numpy as np
     from scipy.integrate import solve_ivp
@@ -1092,61 +980,39 @@ def simulate_gene_circuit_with_growth_feedback(
     gene_expression_time_series = solution.y[:n_genes, :]
     cell_growth_time_series = solution.y[n_genes, :]
 
-    # Save results to files
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_dir = "gene_circuit_results"
-
-    if not os.path.exists(results_dir):
-        os.makedirs(results_dir)
-
-    # Save time series data
-    data_filename = f"{results_dir}/gene_circuit_simulation_{timestamp}.npz"
-    np.savez(
-        data_filename,
-        time=time_series,
-        gene_expression=gene_expression_time_series,
-        cell_growth=cell_growth_time_series,
+    final_gene_expression = gene_expression_time_series[:, -1].tolist()
+    final_cell_mass = float(cell_growth_time_series[-1])
+    final_growth_rate = float(
+        max_growth_rate
+        / (1 + growth_inhibition * sum(gene_growth_weights[i] * gene_expression_time_series[i, -1] for i in range(n_genes)))
     )
 
-    # Save parameters for reference
-    params_filename = f"{results_dir}/simulation_params_{timestamp}.json"
-    params_dict = {
-        "circuit_topology": circuit_topology.tolist(),
-        "kinetic_params": kinetic_params,
-        "growth_params": growth_params,
-        "simulation_time": simulation_time,
-        "time_points": time_points,
+    return {
+        "timestamp": timestamp,
+        "inputs": {
+            "circuit_topology": circuit_topology.tolist(),
+            "kinetic_params": kinetic_params,
+            "growth_params": growth_params,
+            "simulation_time": simulation_time,
+            "time_points": time_points,
+        },
+        "summary": {
+            "num_genes": n_genes,
+            "final_gene_expression_levels": final_gene_expression,
+            "final_cell_mass": final_cell_mass,
+            "final_growth_rate": final_growth_rate,
+        },
+        "results": {
+            "time": time_series.tolist(),
+            "gene_expression": gene_expression_time_series.tolist(),
+            "cell_growth": cell_growth_time_series.tolist(),
+        },
+        "suggested_files": {
+            "time_series_npz": f"gene_circuit_simulation_{timestamp}.npz",
+            "params_json": f"simulation_params_{timestamp}.json",
+        },
     }
-
-    with open(params_filename, "w") as f:
-        json.dump(params_dict, f, indent=2)
-
-    # Create research log
-    log = f"""Gene Regulatory Circuit Simulation with Growth Feedback - {timestamp}
-
-SIMULATION SUMMARY:
-- Simulated a gene regulatory circuit with {n_genes} genes
-- Incorporated growth feedback mechanisms
-- Total simulation time: {simulation_time} time units
-- Collected {time_points} data points
-
-PARAMETERS:
-- Basal expression rates: {basal_rates}
-- Degradation rates: {degradation_rates}
-- Max growth rate: {max_growth_rate}
-- Growth inhibition factor: {growth_inhibition}
-
-RESULTS:
-- Final gene expression levels: {gene_expression_time_series[:, -1].tolist()}
-- Final cell mass: {cell_growth_time_series[-1]:.4f}
-- Growth rate at end of simulation: {max_growth_rate / (1 + growth_inhibition * sum(gene_growth_weights[i] * gene_expression_time_series[i, -1] for i in range(n_genes))):.4f}
-
-FILES:
-- Time series data saved to: {data_filename}
-- Simulation parameters saved to: {params_filename}
-"""
-
-    return log
 
 
 def identify_fas_functional_domains(sequence, sequence_type="protein", output_file="fas_domains_report.txt"):
@@ -1163,8 +1029,9 @@ def identify_fas_functional_domains(sequence, sequence_type="protein", output_fi
 
     Returns
     -------
-    str
-        A research log summarizing the steps taken and results of the domain analysis
+    dict
+        Dictionary containing identified domains and FAS-specific domain summary.
+        No files are written; output_file is accepted for backward compatibility.
 
     """
     import json
@@ -1173,23 +1040,31 @@ def identify_fas_functional_domains(sequence, sequence_type="protein", output_fi
     import requests
     from Bio.Seq import Seq
 
-    research_log = "# Fatty Acid Synthase (FAS) Domain Analysis\n\n"
-    research_log += "## Input Sequence Analysis\n"
-    research_log += f"- Sequence type: {sequence_type}\n"
-    research_log += (
-        f"- Sequence length: {len(sequence)} {'nucleotides' if sequence_type == 'nucleotide' else 'amino acids'}\n\n"
-    )
+    result = {
+        "inputs": {
+            "sequence_type": sequence_type,
+            "sequence_length": len(sequence),
+            "output_file": output_file,
+        },
+        "translation": {},
+        "domains_found": [],
+        "fas_domains_found": [],
+        "summary": {},
+        "suggested_files": {"report_txt": output_file},
+    }
 
     # Convert nucleotide to protein if needed
     if sequence_type == "nucleotide":
-        research_log += "## Sequence Translation\n"
-        research_log += "- Converting nucleotide sequence to protein\n"
         try:
             protein_seq = str(Seq(sequence).translate())
-            research_log += f"- Translated protein length: {len(protein_seq)} amino acids\n\n"
+            result["translation"] = {
+                "status": "ok",
+                "protein_length": len(protein_seq),
+            }
         except Exception as e:
-            research_log += f"- Error in translation: {str(e)}\n"
-            return research_log
+            result["translation"] = {"status": "error", "message": str(e)}
+            result["error"] = f"Error in translation: {str(e)}"
+            return result
     else:
         protein_seq = sequence
 
@@ -1234,9 +1109,6 @@ def identify_fas_functional_domains(sequence, sequence_type="protein", output_fi
     }
 
     # HMMER web API for domain identification
-    research_log += "## Domain Identification\n"
-    research_log += "- Using HMMER web API to search against Pfam database\n"
-
     url = "https://www.ebi.ac.uk/Tools/hmmer/search/hmmscan"
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     data = {"hmmdb": "pfam", "seq": protein_seq}
@@ -1244,13 +1116,13 @@ def identify_fas_functional_domains(sequence, sequence_type="protein", output_fi
     try:
         response = requests.post(url, data=json.dumps(data), headers=headers)
         if response.status_code != 200:
-            research_log += f"- Error: HMMER API returned status code {response.status_code}\n"
-            return research_log
+            result["error"] = f"HMMER API returned status code {response.status_code}"
+            return result
 
         result_url = response.headers.get("Location", "")
         if not result_url:
-            research_log += "- Error: No result URL returned from HMMER API\n"
-            return research_log
+            result["error"] = "No result URL returned from HMMER API"
+            return result
 
         # Wait for results to be ready
         time.sleep(2)
@@ -1258,8 +1130,8 @@ def identify_fas_functional_domains(sequence, sequence_type="protein", output_fi
         # Get results
         result_response = requests.get(f"{result_url}.json")
         if result_response.status_code != 200:
-            research_log += "- Error: Could not retrieve results from HMMER API\n"
-            return research_log
+            result["error"] = "Could not retrieve results from HMMER API"
+            return result
 
         results = result_response.json()
 
@@ -1286,9 +1158,6 @@ def identify_fas_functional_domains(sequence, sequence_type="protein", output_fi
                         )
 
         # Check for FAS domains
-        research_log += f"- Found {len(domains_found)} domains in total\n\n"
-        research_log += "## FAS Functional Domains Identified\n"
-
         fas_domains_found = []
         for domain in domains_found:
             for fas_key, fas_info in fas_domains.items():
@@ -1303,49 +1172,20 @@ def identify_fas_functional_domains(sequence, sequence_type="protein", output_fi
                         }
                     )
 
-        if not fas_domains_found:
-            research_log += "- No specific FAS domains identified in the sequence\n"
-        else:
-            research_log += f"- Found {len(fas_domains_found)} FAS-related domains\n"
-            for i, domain in enumerate(fas_domains_found, 1):
-                research_log += f"\n### {i}. {domain['name']} (Positions {domain['start']}-{domain['end']})\n"
-                research_log += f"- Pfam ID: {domain['pfam_id']}\n"
-                research_log += f"- Function: {domain['function']}\n"
-
-        # Save detailed report to file
-        with open(output_file, "w") as f:
-            f.write("# Fatty Acid Synthase (FAS) Domain Analysis Detailed Report\n\n")
-            f.write("## Input Sequence\n")
-            f.write(f"- Type: {sequence_type}\n")
-            f.write(f"- Length: {len(sequence)} {'nucleotides' if sequence_type == 'nucleotide' else 'amino acids'}\n")
-            if sequence_type == "nucleotide":
-                f.write(f"- Translated protein length: {len(protein_seq)} amino acids\n")
-
-            f.write("\n## All Domains Found\n")
-            for i, domain in enumerate(domains_found, 1):
-                f.write(f"\n### {i}. {domain['name']} (Positions {domain['start']}-{domain['end']})\n")
-                f.write(f"- Description: {domain['description']}\n")
-                f.write(f"- Score: {domain['score']}\n")
-
-            f.write("\n## FAS Functional Domains\n")
-            if not fas_domains_found:
-                f.write("- No specific FAS domains identified in the sequence\n")
-            else:
-                for i, domain in enumerate(fas_domains_found, 1):
-                    f.write(f"\n### {i}. {domain['name']} (Positions {domain['start']}-{domain['end']})\n")
-                    f.write(f"- Pfam ID: {domain['pfam_id']}\n")
-                    f.write(f"- Function: {domain['function']}\n")
-
-        research_log += "\n## Summary\n"
-        research_log += f"- Detailed domain analysis saved to: {output_file}\n"
-        if fas_domains_found:
-            research_log += "- The sequence contains multiple domains characteristic of Fatty Acid Synthase\n"
-            research_log += "- The identified domains suggest this sequence is involved in fatty acid biosynthesis\n"
-        else:
-            research_log += "- The sequence does not contain typical FAS domains\n"
-            research_log += "- This may not be a Fatty Acid Synthase gene or may be a partial sequence\n"
+        result["domains_found"] = domains_found
+        result["fas_domains_found"] = fas_domains_found
+        result["summary"] = {
+            "total_domains_found": len(domains_found),
+            "fas_domains_found": len(fas_domains_found),
+            "fas_domains_present": len(fas_domains_found) > 0,
+            "interpretation": (
+                "The sequence contains multiple domains characteristic of Fatty Acid Synthase"
+                if fas_domains_found
+                else "The sequence does not contain typical FAS domains; it may not be FAS or may be partial."
+            ),
+        }
 
     except Exception as e:
-        research_log += f"- Error in domain identification: {str(e)}\n"
+        result["error"] = f"Error in domain identification: {str(e)}"
 
-    return research_log
+    return result

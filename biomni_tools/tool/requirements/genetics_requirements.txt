@@ -1,0 +1,9 @@
+biopython
+matplotlib
+msprime
+numpy
+pandas
+pyliftover
+requests
+scipy
+torch

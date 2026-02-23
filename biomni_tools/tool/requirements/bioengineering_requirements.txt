@@ -1,0 +1,7 @@
+numpy
+pandas
+pykalman
+scikit-image
+scikit-learn
+scipy
+trackpy
